@@ -1,0 +1,36 @@
+{
+  "questions": [
+    {
+      "question": "How many days of annual paid leave do employees get?",
+      "reference": "Full-time employees accrue 22 days of annual paid leave."
+    },
+    {
+      "question": "What is the price of the Pro plan per user per month?",
+      "reference": "The Pro plan costs $29 per user per month."
+    },
+    {
+      "question": "How long is the self-serve refund window after a purchase?",
+      "reference": "Self-serve refunds are available for 30 days after the purchase date."
+    },
+    {
+      "question": "What additional features does the Business plan include compared to Pro?",
+      "reference": "Business includes everything in Pro, plus unlimited projects, single sign-on (SSO), priority support, and audit logs."
+    },
+    {
+      "question": "How long is a password reset link valid?",
+      "reference": "Password reset links expire after 24 hours."
+    },
+    {
+      "question": "How many consecutive weeks can an employee work abroad without manager approval?",
+      "reference": "Working abroad for more than 4 consecutive weeks requires manager approval."
+    },
+    {
+      "question": "How many document pages can the Pro plan process per month through the API?",
+      "reference": "The Pro plan processes up to 10,000 document pages per month through the API."
+    },
+    {
+      "question": "What was NimbusWorks highest grossing product in 2024?",
+      "reference": "This information is not available in the provided documents."
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+docs_dir: data/sample_docs
+test_set: data/test_set.json
+results_dir: results
+
+models:
+  # 100% free + local: runs everything through Ollama on this machine.
+  provider: ollama                # ollama (free, local) | openai (paid cloud)
+  base_url: http://localhost:11434/v1
+  llm: llama3.2:3b                # answer generation model (must exist in `ollama list`)
+  judge_llm: llama3.2:3b          # RAGAS judge LLM
+  embeddings: nomic-embed-text    # embedding model (pulled via `ollama pull nomic-embed-text`)
+  embedding_backend: openai       # openai-compatible API (cloud with base_url, or local via Ollama)
+
+  # Switch to paid OpenAI cloud by using:
+  # provider: openai
+  # llm: gpt-4o-mini
+  # judge_llm: gpt-4o-mini
+  # embeddings: text-embedding-3-small
+
+retrieval:
+  top_k: 3
+
+# One experiment row per chunking/retrieval combo. Each overrides the defaults
+# for chunk_size / chunk_overlap / top_k. Add as many as you want to compare.
+experiments:
+  - name: baseline-600-80
+    chunk_size: 600
+    chunk_overlap: 80
+    top_k: 3
+
+  - name: small-300-50
+    chunk_size: 300
+    chunk_overlap: 50
+    top_k: 4
+
+  - name: large-1000-150
+    chunk_size: 1000
+    chunk_overlap: 150
+    top_k: 2

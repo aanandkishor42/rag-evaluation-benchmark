@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+*.log
+.env
+results/*.db
+results/*.csv
+results/*.log
+results/report.html
+data/chroma/
