@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import json
 import os
 import tempfile
 import threading
@@ -16,6 +18,13 @@ st.set_page_config(
 
 SUPPORTED_FORMATS = ["txt", "md", "pdf"]
 
+_TEST_SET_TEMPLATE_CSV = (
+    "question,reference\n"
+    "What is the company's refund policy?,Refunds are issued within 14 days of purchase.\n"
+    "Which products include a lifetime warranty?,Only the Pro tier products come with a lifetime warranty.\n"
+    "What hours is support available?,Support is available 24/7 for enterprise customers.\n"
+)
+
 
 def _pick_config() -> object:
     from rag.config import load_config
@@ -31,7 +40,9 @@ def _load_plan() -> object:
     return load_config(os.getenv("RAG_CONFIG", "config.yaml"))
 
 
-def _run_benchmark_worker(plan, exp_names: list[str], metrics: list[str]) -> None:
+def _run_benchmark_worker(
+    plan, exp_names: list[str], metrics: list[str], custom_questions=None
+) -> None:
     """Runs the RAGAS benchmark in a background thread, appending per-question
     rows to a shared dict so the UI can show progress live."""
     from benchmark.store import ResultsStore
@@ -44,7 +55,7 @@ def _run_benchmark_worker(plan, exp_names: list[str], metrics: list[str]) -> Non
     bench["status"] = "Loading documents & test questions..."
     try:
         documents = load_documents(plan.docs_dir)
-        test_questions = load_test_set(plan.test_set)
+        test_questions = custom_questions or load_test_set(plan.test_set)
         experiments = [e for e in plan.experiments if e.name in exp_names]
         total = len(experiments) * len(test_questions)
         done = 0
@@ -78,6 +89,7 @@ def _run_benchmark_worker(plan, exp_names: list[str], metrics: list[str]) -> Non
                 done += 1
                 bench["status"] = f"{exp.name}: {done}/{total} questions scored..."
         bench["done_experiments"] = exp_names
+        bench["source"] = "custom" if custom_questions else "test_set.json"
 
         try:
             store = ResultsStore(plan.results_dir / "benchmark.db")
@@ -216,7 +228,10 @@ def main() -> None:
     if "bench_running" not in st.session_state:
         st.session_state.bench_running = False
     if "bench" not in st.session_state:
-        st.session_state.bench = {"rows": [], "done_experiments": [], "done": False, "status": ""}
+        st.session_state.bench = {
+            "rows": [], "done_experiments": [], "done": False, "status": "",
+            "saved": None, "error": None, "source": None,
+        }
 
     tab_chat, tab_bench, tab_scores = st.tabs(
         ["💬 Chat", "▶ Run benchmark", "📊 Benchmark scores"]
@@ -260,33 +275,56 @@ def _session_runs_from_bench(bench: dict):
 def _render_bench_tab(plan) -> None:
     st.subheader("⏱️ Run a benchmark from here")
     st.caption(
-        "Answers each question in `test_set.json` with every selected experiment and "
-        "scores them with RAGAS (judge LLM = Groq on the cloud, Ollama locally). "
-        "Results appear live, question by question."
+        "Answers each question with every selected experiment and scores it with RAGAS "
+        "(judge LLM = Groq on the cloud, Ollama locally). Results appear live, question "
+        "by question. Use the default 8 test questions OR upload your own."
     )
 
     exp_names = [e.name for e in plan.experiments]
     selected = st.multiselect(
         "Experiments to run", exp_names, default=[exp_names[0]], key="bench_exp_select"
     )
+
+    st.markdown("**Questions to benchmark**")
+    st.download_button(
+        "📎 Download template.csv",
+        data=_TEST_SET_TEMPLATE_CSV,
+        file_name="template.csv",
+        mime="text/csv",
+        use_container_width=False,
+    )
+    custom_q = _render_test_set_uploader()
+    if custom_q:
+        st.success(f"Using your uploaded test set: {len(custom_q)} questions.")
+    else:
+        st.caption(
+            f"Default test set (`{plan.test_set}`): **{load_test_set_count(plan)} questions**. "
+            "CSV format (col A `question`, col B `reference` = expected answer from the docs) "
+            "— `context_recall` will show whether the right chunk was found, `faithfulness` "
+            "whether the answer stays true to the docs."
+        )
+
     col_note, col_btn = st.columns([3, 1])
     with col_note:
+        n_questions = len(custom_q) if custom_q else load_test_set_count(plan)
         st.caption(
-            f"Questions: {len(load_test_set_count(plan))} per experiment. "
-            "On the free Groq tier keep it to 1 experiment (≈40 LLM calls) to stay in quota."
+            f"{len(selected)} experiment(s) × {n_questions} questions. "
+            f"≈ {len(selected) * n_questions * 4} judge-LLM calls (Groq free tier: 1,000/day)."
         )
     with col_btn:
         start = st.button("▶ Run benchmark", type="primary", use_container_width=True)
 
     if start and not st.session_state.bench_running:
-        bench = {"rows": [], "done_experiments": [], "done": False, "status": "Starting...",
-                 "saved": None, "error": None}
+        bench = {
+            "rows": [], "done_experiments": [], "done": False, "status": "Starting...",
+            "saved": None, "error": None, "source": None,
+        }
         st.session_state.bench = bench
         st.session_state.bench_running = True
         st.session_state.config = _pick_config()
         thread = threading.Thread(
             target=_run_benchmark_worker,
-            args=(plan, selected, st.session_state.config.metrics),
+            args=(plan, selected, st.session_state.config.metrics, custom_q),
             daemon=True,
         )
         thread.start()
@@ -301,10 +339,11 @@ def _render_bench_tab(plan) -> None:
             if bench.get("error"):
                 st.error(f"Benchmark failed: {bench['error']}")
             else:
+                src = bench.get("source") or "test_set.json"
                 if bench.get("saved"):
-                    st.success("Benchmark done — saved to `results/benchmark.db`.")
+                    st.success(f"Benchmark done ({src}) — saved to `results/benchmark.db`.")
                 else:
-                    st.info("Benchmark done — showing results in this session (cloud files are read-only).")
+                    st.info(f"Benchmark done ({src}) — showing results in this session (cloud files are read-only).")
         else:
             st.caption("Nothing run yet — pick experiments and press ▶ Run benchmark.")
 
@@ -320,6 +359,65 @@ def _render_bench_tab(plan) -> None:
         if runs is not None:
             st.subheader("Aggregated scores")
             st.dataframe(runs, use_container_width=True, hide_index=True)
+
+
+def _render_test_set_uploader():
+    """Optional custom test set uploader. Returns list[dict] or None."""
+    st.file_uploader(
+        "Upload your own test set (optional)",
+        type=["csv", "json"],
+        key="bench_custom_set",
+    )
+    uploaded = st.session_state.get("bench_custom_set")
+    if uploaded is None:
+        return None
+    try:
+        questions = _parse_test_set_bytes(uploaded.name, uploaded.getvalue())
+    except Exception as exc:
+        st.error(f"Could not parse test set: {exc}")
+        return None
+    if not questions:
+        st.warning("No valid questions found in the file.")
+        return None
+    preview = pd.DataFrame(
+        {
+            "question": [q["user_input"] for q in questions],
+            "has_reference": [bool(q.get("reference", "").strip()) for q in questions],
+        }
+    )
+    st.dataframe(preview, use_container_width=True, hide_index=True)
+    return questions
+
+
+def _parse_test_set_bytes(filename: str, data: bytes) -> list[dict]:
+    name = filename.lower()
+    if name.endswith(".json"):
+        payload = json.loads(data.decode("utf-8"))
+        if isinstance(payload, dict):
+            payload = payload.get("questions") or payload.get("test_set") or []
+        questions = payload
+    else:
+        df = pd.read_csv(io.BytesIO(data))
+        q_col = "user_input" if "user_input" in df.columns else (
+            "question" if "question" in df.columns else df.columns[0]
+        )
+        ref_col = "reference" if "reference" in df.columns else None
+        questions = []
+        for _, r in df.iterrows():
+            item = {"user_input": str(r[q_col])}
+            if ref_col and not pd.isna(r[ref_col]) and str(r[ref_col]).strip():
+                item["reference"] = str(r[ref_col])
+            questions.append(item)
+
+    parsed = []
+    for q in questions:
+        if isinstance(q, dict) and str(q.get("user_input", "")).strip():
+            item = {"user_input": str(q["user_input"]).strip()}
+            ref = q.get("reference", q.get("expected_answer", ""))
+            if str(ref or "").strip():
+                item["reference"] = str(ref).strip()
+            parsed.append(item)
+    return parsed
 
 
 def load_test_set_count(plan) -> int:
