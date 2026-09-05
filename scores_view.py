@@ -23,6 +23,9 @@ def _load_history(db_path: Path) -> pd.DataFrame:
         conn,
     )
     conn.close()
+    for c in ["context_precision", "context_recall", "faithfulness", "answer_relevancy"]:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
     return df
 
 
@@ -133,8 +136,15 @@ def _render_recent(recent: pd.DataFrame) -> None:
     st.markdown("## All recorded runs")
     show = recent.copy()
     for c in metric_cols:
-        show[c] = show[c].round(4)
+        show[c] = pd.to_numeric(show[c], errors="coerce").round(4)
     st.dataframe(show, use_container_width=True, hide_index=True)
+
+    full_blank = show[metric_cols].isna().all(axis=1)
+    if full_blank.any():
+        st.caption(
+            f"{int(full_blank.sum())} run(s) had no scorable scores (judge couldn't "
+            "score them — check Groq quota / per-question `status` column)."
+        )
 
 
 def _render_glance_and_charts(recent: pd.DataFrame, metric_cols: list[str]) -> None:
