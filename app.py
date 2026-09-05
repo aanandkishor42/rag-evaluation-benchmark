@@ -128,6 +128,8 @@ def _aggregate(rows: list[dict], metrics: list[str]) -> dict[str, float]:
 
 
 def _build_index(uploaded_files: list) -> str:
+    from rag.pipeline import RAGPipeline
+
     tmp = Path(st.session_state.tmp_dir)
     documents = _build_documents(uploaded_files, tmp)
     if not documents:
