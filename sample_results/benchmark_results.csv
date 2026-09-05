@@ -1,0 +1,4 @@
+experiment,context_precision,context_recall,faithfulness,answer_relevancy
+baseline-600-80,1.0,0.8419,0.9667,0.8708
+large-1000-150,0.75,0.7812,0.9,0.9245
+small-300-50,,0.8,1.0,0.9494

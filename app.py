@@ -102,11 +102,20 @@ def main() -> None:
     st.title("📚 Chat with your documents")
     st.caption(
         "Upload your own .txt / .md / .pdf files, then ask questions. Answers come only from "
-        "your documents - powered by a local free RAG pipeline (Ollama + ChromaDB)."
+        "your documents - powered by a free RAG pipeline (Groq + FastEmbed on the cloud, "
+        "or Ollama locally). Check the 📊 Benchmark tab for accuracy scores."
     )
 
     if "config" not in st.session_state:
         st.session_state.config = _pick_config()
+    if "results_dir" not in st.session_state:
+        import os
+
+        from rag.config import load_config
+
+        st.session_state.results_dir = load_config(
+            os.getenv("RAG_CONFIG", "config.yaml")
+        ).results_dir
     if "tmp_dir" not in st.session_state:
         st.session_state.tmp_dir = tempfile.mkdtemp(prefix="ragdocs_")
     if "pipeline" not in st.session_state:
@@ -114,6 +123,24 @@ def main() -> None:
     if "history" not in st.session_state:
         st.session_state.history = []
 
+    tab_chat, tab_scores = st.tabs(["💬 Chat", "📊 Benchmark scores"])
+
+    with tab_chat:
+        try:
+            _render_chat_tab()
+        except Exception as exc:
+            st.error(f"⚠️ Something went wrong: {exc}")
+            st.caption("If this happened while building the index, check the app logs "
+                       "(Manage app -> Logs). On Streamlit Cloud the first build also "
+                       "downloads the embedding model (~30s).")
+
+    with tab_scores:
+        from scores_view import render_scores
+
+        render_scores(st.session_state.results_dir)
+
+
+def _render_chat_tab() -> None:
     with st.sidebar:
         st.header("1️⃣ Upload documents")
         uploaded = st.file_uploader(

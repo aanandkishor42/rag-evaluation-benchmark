@@ -1,0 +1,20 @@
+experiment,question,response,context_precision,context_recall,faithfulness,answer_relevancy
+baseline-600-80,How many days of annual paid leave do employees get?,Full-time employees accrue 22 days of annual paid leave.,0.9999999999,1.0,1.0,nan
+baseline-600-80,What is the price of the Pro plan per user per month?,The price of the Pro plan per user per month is $29.,nan,1.0,1.0,nan
+baseline-600-80,How long is the self-serve refund window after a purchase?,The self-serve refund window is 30 days after the purchase date.,nan,1.0,1.0,nan
+baseline-600-80,What additional features does the Business plan include compared to Pro?,"According to the provided context, the Business plan includes the following additional features compared to Pro:
+
+1. Unlimited projects
+2. Single sign-on (SSO)
+3. Priority support
+4. Audit logs",nan,0.6363636363636364,nan,nan
+baseline-600-80,How long is a password reset link valid?,"According to the context, a password reset link expires after 24 hours.",0.9999999999,1.0,1.0,0.9490620171286889
+baseline-600-80,How many consecutive weeks can an employee work abroad without manager approval?,"According to the context, an employee can work abroad for more than 4 consecutive weeks without manager approval.",nan,1.0,nan,nan
+baseline-600-80,How many document pages can the Pro plan process per month through the API?,"According to the context, the Pro plan includes 10,000 document pages processed per month through the API.",nan,1.0,nan,nan
+baseline-600-80,What was NimbusWorks highest grossing product in 2024?,"I don't know. The provided context does not mention any information about NimbusWorks' products, including their highest grossing product in 2024.",nan,0.0,nan,nan
+baseline-600-80,Why did you settle on chunk_size=500 and chunk_overlap=80?,"You settled on chunk_size=500 and chunk_overlap=80 because reducing the chunk size to 500 made each chunk more tightly focused on a single idea, which helped to prevent the model from filling gaps with its own prior knowledge instead of the source text. The overlap was chosen to protect against losing context at the cut point between chunks, ensuring that each chunk was a complete, self-contained unit of meaning.",nan,0.625,1.0,0.9999999999999999
+baseline-600-80,Which free LLM did you use for generating answers in the Document Q&A system?,"You used two free LLMs: 
+
+1. Llama 3.2 (3B) running through Ollama, for local use.
+2. The openai/gpt-oss-20b model, using Groq's API, for the publicly deployed version.",nan,1.0,nan,nan
+baseline-600-80,Why retrieve the top 5 chunks instead of just the single best match?,"Retrieving the top 5 chunks instead of just the single best match is a practical middle ground because it balances the risk of retrieving the wrong answer with the risk of flooding the prompt with irrelevant text. Retrieving only 1 chunk is risky, as it may not be the right one, while retrieving 20 chunks would work but would increase cost/latency and potentially confuse the LLM about which parts matter.",nan,1.0,0.8,0.6634164580379892
