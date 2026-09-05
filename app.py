@@ -57,7 +57,7 @@ def _run_benchmark_sync(
     from rag.pipeline import RAGPipeline
 
     bench = {"rows": [], "done_experiments": [], "done": False,
-             "status": "", "saved": None, "error": None, "source": None}
+             "status": "", "saved": None, "error": None, "source": None, "ping": None}
     metric_cols = ["context_precision", "context_recall", "faithfulness", "answer_relevancy"]
     with st.status(
         "Running benchmark… (don't refresh this page)", expanded=True
@@ -69,6 +69,7 @@ def _run_benchmark_sync(
         experiments = [e for e in plan.experiments if e.name in exp_names]
         first_exp = experiments[0]
         ping = _ping_judge(first_exp)
+        bench["ping"] = ping
         st.write(ping)
         total = len(experiments) * len(test_questions)
         done = 0
@@ -438,6 +439,16 @@ def _render_bench_results(bench: dict) -> None:
 
     if bench.get("error"):
         st.error(f"Benchmark failed: {bench['error']}")
+
+    ping = bench.get("ping") or ""
+    if ping.startswith("⚠️"):
+        st.error(
+            "❌ **Judge provider check FAILED before the run** — that is why scores are empty. "
+            "Most likely the Groq free tier is out of quota for today (1,000 calls/day). "
+            "Check <a href='https://console.groq.com/usage' target='_blank'>console.groq.com/usage</a> "
+            "or wait until the quota resets (next day).",
+            unsafe_allow_html=True,
+        )
 
     with st.container(border=True):
         st.markdown(

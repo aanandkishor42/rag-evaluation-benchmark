@@ -48,6 +48,10 @@ def _chat_llm(model: str, provider: str, base_url: str | None) -> ChatOpenAI:
             or ("https://api.groq.com/openai/v1" if provider == "groq" else DEFAULT_OLLAMA_BASE_URL)
         )
         kwargs["api_key"] = api_key_for(provider) or "ollama"
+    # Ride out Groq free-tier rate limits (30 RPM): retry transient 429s/5xx.
+    if provider == "groq":
+        kwargs["max_retries"] = 5
+        kwargs["timeout"] = 60
     return ChatOpenAI(**kwargs)
 
 
