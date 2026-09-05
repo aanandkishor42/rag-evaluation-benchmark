@@ -26,6 +26,10 @@ def _pick_config() -> object:
     return plan.experiments[0]
 
 
+def _active_config_name() -> str:
+    return os.getenv("RAG_CONFIG", "config.yaml")
+
+
 def _load_plan() -> object:
     from rag.config import load_config
 
@@ -68,6 +72,11 @@ def _run_benchmark_sync(
         test_questions = custom_questions or load_test_set(plan.test_set)
         experiments = [e for e in plan.experiments if e.name in exp_names]
         first_exp = experiments[0]
+        st.write(
+            f"Judge: **`{first_exp.provider}`** • model `{first_exp.judge_llm}` — "
+            f"embeddings: `{first_exp.embedding_backend}`/`{first_exp.embedding_model}`"
+        )
+        bench["provider"] = f"{first_exp.provider} · {first_exp.judge_llm}"
         ping = _ping_judge(first_exp)
         bench["ping"] = ping
         st.write(ping)
@@ -276,6 +285,13 @@ def main() -> None:
             "saved": None, "error": None, "source": None,
         }
 
+    cfg = st.session_state.config
+    st.sidebar.markdown(
+        f"**Active config:** `{_active_config_name()}`  \n"
+        f"Judge: **{cfg.provider}** • `{cfg.judge_llm}`  \n"
+        f"Embeddings: `{cfg.embedding_backend}` / `{cfg.embedding_model}`"
+    )
+
     tab_chat, tab_bench, tab_scores = st.tabs(
         ["💬 Chat", "▶ Run benchmark", "📊 Benchmark scores"]
     )
@@ -443,12 +459,14 @@ def _render_bench_results(bench: dict) -> None:
     ping = bench.get("ping") or ""
     if ping.startswith("⚠️"):
         st.error(
-            "❌ **Judge provider check FAILED before the run** — that is why scores are empty. "
-            "Most likely the Groq free tier is out of quota for today (1,000 calls/day). "
+            f"❌ **Judge: {bench.get('provider', '?')} — check FAILED before the run**, "
+            "that's why scores are empty. Most likely the free tier is out of quota. "
             "Check <a href='https://console.groq.com/usage' target='_blank'>console.groq.com/usage</a> "
-            "or wait until the quota resets (next day).",
+            "or wait for the daily reset.",
             unsafe_allow_html=True,
         )
+    elif bench.get("provider"):
+        st.caption(f"Run judge: {bench['provider']}")
 
     with st.container(border=True):
         st.markdown(
