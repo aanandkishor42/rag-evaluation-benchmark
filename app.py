@@ -315,12 +315,15 @@ def _render_bench_tab(plan) -> None:
 
     st.markdown("**2️⃣ Questions to benchmark**")
     st.caption(
-        "These must be **your** questions about your own document. Download the blank "
-        "template, fill in `question` and `reference` (reference = the expected answer "
-        "you take from your document), then upload it. Or leave empty to use the "
-        "bundled demo questions on the bundled demo docs."
+        "These must be **your** questions about your own document. Either upload a CSV "
+        "(`question,reference`) or just type them below. `reference` = the expected answer "
+        "you take from your document (it powers `context_recall`)."
     )
     custom_q = _render_test_set_uploader()
+    q_source = "uploaded file"
+    if not custom_q:
+        custom_q = _questions_from_textareas()
+        q_source = "typed questions"
     st.download_button(
         "📎 Template CSV (blank — fill in YOUR questions)",
         data=_template_csv(plan, custom_q),
@@ -329,11 +332,19 @@ def _render_bench_tab(plan) -> None:
         use_container_width=False,
     )
     if custom_q:
-        st.success(f"Using your uploaded test set: {len(custom_q)} questions.")
+        preview = pd.DataFrame(
+            {
+                "question": [q["user_input"] for q in custom_q],
+                "expected answer (reference)": [q.get("reference", "") for q in custom_q],
+            }
+        )
+        st.success(f"Using your {q_source}: {len(custom_q)} questions.")
+        st.dataframe(preview, use_container_width=True, hide_index=True)
     else:
         st.caption(
-            f"Default test set (`{plan.test_set}`): **{load_test_set_count(plan)} questions**. "
-            "CSV format (col A `question`, col B `reference` = expected answer from the docs)."
+            f"Nothing picked yet — falling back to the bundled demo test set "
+            f"(`{plan.test_set}`): **{load_test_set_count(plan)} questions** on the bundled "
+            "demo docs (works too, but it's demo data)."
         )
 
     col_note, col_btn = st.columns([3, 1])
@@ -415,10 +426,10 @@ def _render_progress_block(bench: dict, running: bool) -> None:
             )
 
 
-def _render_test_set_uploader():
+def _render_test_set_uploader() -> list | None:
     """Optional custom test set uploader. Returns list[dict] or None."""
     st.file_uploader(
-        "Upload your own test set (optional)",
+        "Upload your questions (CSV: `question,reference`  or  JSON)",
         type=["csv", "json"],
         key="bench_custom_set",
     )
@@ -428,19 +439,39 @@ def _render_test_set_uploader():
     try:
         questions = _parse_test_set_bytes(uploaded.name, uploaded.getvalue())
     except Exception as exc:
-        st.error(f"Could not parse test set: {exc}")
+        st.warning(f"Could not parse file: {exc} — you can type your questions below instead.")
         return None
     if not questions:
-        st.warning("No valid questions found in the file.")
+        st.warning("That file had no questions (the blank template is just a header). "
+                   "Fill it in or type your questions below instead.")
         return None
-    preview = pd.DataFrame(
-        {
-            "question": [q["user_input"] for q in questions],
-            "has_reference": [bool(q.get("reference", "").strip()) for q in questions],
-        }
-    )
-    st.dataframe(preview, use_container_width=True, hide_index=True)
     return questions
+
+
+def _questions_from_textareas() -> list | None:
+    """Let visitors simply type their questions (and optional expected answers)."""
+    st.markdown("**…or just type them here**")
+    questions = st.text_area(
+        "Questions — one per line",
+        key="bench_q_text",
+        placeholder="What is the refund policy?\nWhich product has a lifetime warranty?",
+    )
+    answers = st.text_area(
+        "Expected answers — same order, one per line (optional)",
+        key="bench_a_text",
+        height=90,
+    )
+    q_lines = [ln.strip().strip('"') for ln in questions.splitlines() if ln.strip()]
+    a_lines = [ln.strip().strip('"') for ln in answers.splitlines() if ln.strip()]
+    if not q_lines:
+        return None
+    parsed = []
+    for i, q in enumerate(q_lines):
+        item = {"user_input": q}
+        if i < len(a_lines) and a_lines[i]:
+            item["reference"] = a_lines[i]
+        parsed.append(item)
+    return parsed
 
 
 def _parse_test_set_bytes(filename: str, data: bytes) -> list[dict]:
@@ -451,7 +482,10 @@ def _parse_test_set_bytes(filename: str, data: bytes) -> list[dict]:
             payload = payload.get("questions") or payload.get("test_set") or []
         questions = payload
     else:
-        df = pd.read_csv(io.BytesIO(data))
+        try:
+            df = pd.read_csv(io.BytesIO(data))
+        except Exception:
+            return _parse_test_set_csv_manual(data.decode("utf-8"))
         q_col = "user_input" if "user_input" in df.columns else (
             "question" if "question" in df.columns else df.columns[0]
         )
@@ -489,6 +523,25 @@ def _template_csv(plan, custom_q=None) -> str:
         ref = str(q.get("reference", "")).replace('"', '""')
         lines.append(f'"{text}","{ref}"')
     return "\n".join(lines)
+
+
+def _parse_test_set_csv_manual(text: str) -> list[dict]:
+    """Forgiving CSV parse (works even on hand-made files)."""
+    import csv
+
+    rows: list[dict] = []
+    reader = csv.reader(io.StringIO(text))
+    header = None
+    for line in reader:
+        if not line or not any(cell.strip() for cell in line):
+            continue
+        if header is None:
+            header = [c.strip().lower() for c in line]
+            continue
+        q = line[0] if len(line) > 0 else ""
+        ref = line[1] if len(line) > 1 else ""
+        rows.append({"user_input": q, "reference": ref})
+    return rows
 
 
 def load_test_set_count(plan) -> int:
