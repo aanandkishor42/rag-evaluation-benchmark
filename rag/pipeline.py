@@ -17,9 +17,11 @@ RAG_PROMPT = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            "You are a helpful assistant. Answer the user's question using ONLY the "
-            "provided context. If the context does not contain the answer, say you "
-            "don't know instead of guessing.",
+            "You are a helpful assistant. Answer the user's question based on the "
+            "provided context. Combine information from across all context chunks if "
+            "needed. If the context genuinely has no relevant information to answer "
+            "the question, say you don't know. Do not guess or make up facts that are "
+            "not supported by the context.",
         ),
         ("human", "Context:\n-----\n{context}\n-----\n\nQuestion: {question}"),
     ]

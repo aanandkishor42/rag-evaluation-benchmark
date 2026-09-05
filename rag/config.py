@@ -9,8 +9,8 @@ from typing import Any
 import yaml
 
 DEFAULT_CHUNK_SIZE = 600
-DEFAULT_CHUNK_OVERLAP = 80
-DEFAULT_TOP_K = 3
+DEFAULT_CHUNK_OVERLAP = 150
+DEFAULT_TOP_K = 5
 DEFAULT_METRICS = ["context_precision", "context_recall", "faithfulness", "answer_relevancy"]
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1"
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
