@@ -314,9 +314,15 @@ def _render_bench_tab(plan) -> None:
             st.caption("_no files chosen yet_")
 
     st.markdown("**2️⃣ Questions to benchmark**")
+    st.caption(
+        "These must be **your** questions about your own document. Download the blank "
+        "template, fill in `question` and `reference` (reference = the expected answer "
+        "you take from your document), then upload it. Or leave empty to use the "
+        "bundled demo questions on the bundled demo docs."
+    )
     custom_q = _render_test_set_uploader()
     st.download_button(
-        "📎 Template CSV (with your current questions)",
+        "📎 Template CSV (blank — fill in YOUR questions)",
         data=_template_csv(plan, custom_q),
         file_name="template.csv",
         mime="text/csv",
@@ -469,11 +475,14 @@ def _parse_test_set_bytes(filename: str, data: bytes) -> list[dict]:
 
 
 def _template_csv(plan, custom_q=None) -> str:
-    """Pre-fills the downloadable template with the current questions (your
-    uploaded test set if any, otherwise the bundled one)."""
+    """Template = header only by default (your document, YOUR questions).
+    If a custom test set is already uploaded, pre-fill it for easy editing."""
     from evaluation.testset import load_test_set
 
-    qs = custom_q if custom_q is not None else load_test_set(plan.test_set)
+    if custom_q is not None:
+        qs = custom_q
+    else:
+        return "question,reference\n"  # blank: fill in your own questions
     lines = ["question,reference"]
     for q in qs:
         text = str(q["user_input"]).replace('"', '""')
