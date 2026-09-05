@@ -4,7 +4,6 @@ import io
 import json
 import os
 import tempfile
-import threading
 from pathlib import Path
 
 import pandas as pd
@@ -33,29 +32,34 @@ def _load_plan() -> object:
     return load_config(os.getenv("RAG_CONFIG", "config.yaml"))
 
 
-def _run_benchmark_worker(
+def _run_benchmark_sync(
     plan, exp_names: list[str], metrics: list[str], custom_questions=None, documents=None
-) -> None:
-    """Runs the RAGAS benchmark in a background thread, appending per-question
-    rows to a shared dict so the UI can show progress live."""
-    bench = st.session_state["bench"]
-    bench["status"] = "Warming up (importing libraries + embedding model)…"
-    try:
-        from benchmark.store import ResultsStore
-        from evaluation.ragas_eval import run_ragas_evaluation
-        from evaluation.testset import load_test_set
-        from rag.loader import load_documents
-        from rag.pipeline import RAGPipeline
+) -> dict:
+    """Runs the RAGAS benchmark synchronously inside an st.status() block so every
+    per-question row streams LIVE to the page. Returns the bench dict."""
+    from evaluation.ragas_eval import run_ragas_evaluation
+    from evaluation.testset import load_test_set
+    from rag.loader import load_documents
+    from rag.pipeline import RAGPipeline
 
-        bench["status"] = "Loading documents & test questions..."
+    bench = {"rows": [], "done_experiments": [], "done": False,
+             "status": "", "saved": None, "error": None, "source": None}
+    metric_cols = ["context_precision", "context_recall", "faithfulness", "answer_relevancy"]
+    with st.status(
+        "Running benchmark… (don't refresh this page)", expanded=True
+    ) as status:
+        st.write("Warming up libraries + embedding model… (first time ~30-60s)")
+
         documents = documents if documents is not None else load_documents(plan.docs_dir)
         test_questions = custom_questions or load_test_set(plan.test_set)
         experiments = [e for e in plan.experiments if e.name in exp_names]
         total = len(experiments) * len(test_questions)
         done = 0
+        progress = st.progress(0.0)
+        table = st.empty()
 
         for exp in experiments:
-            bench["status"] = f"Indexing + answering with {exp.name}..."
+            status.update(label=f"Indexing + answering with `{exp.name}`…")
             pipeline = RAGPipeline(exp, documents)
             for q in test_questions:
                 result = pipeline.answer(q["user_input"], q.get("reference", ""), q.get("reference_contexts"))
@@ -67,14 +71,9 @@ def _run_benchmark_worker(
                         "reference": result.reference,
                     }
                 ]
-                agg, per = run_ragas_evaluation(
-                    sample,
-                    metrics,
-                    exp.judge_llm,
-                    exp.embedding_model,
-                    exp.provider,
-                    exp.base_url,
-                    exp.embedding_backend,
+                _, per = run_ragas_evaluation(
+                    sample, metrics, exp.judge_llm, exp.embedding_model,
+                    exp.provider, exp.base_url, exp.embedding_backend,
                 )
                 row: dict[str, object] = {"experiment": exp.name, "question": q["user_input"]}
                 if per:
@@ -84,37 +83,51 @@ def _run_benchmark_worker(
                         row[k] = round(v, 4) if isinstance(v, float) else v
                 bench["rows"].append(row)
                 done += 1
-                bench["status"] = f"{exp.name}: {done}/{total} questions scored..."
-        bench["done_experiments"] = exp_names
-        bench["source"] = "custom" if custom_questions else "test_set.json"
+                df = pd.DataFrame(bench["rows"])
+                table.dataframe(
+                    df.style.format({c: "{:.4f}" for c in metric_cols if c in df.columns},
+                                    na_rep="-"),
+                    use_container_width=True, hide_index=True,
+                )
+                progress.progress(done / total)
+                status.update(label=f"{exp.name}: {done}/{total} questions scored…")
 
-        try:
-            store = ResultsStore(plan.results_dir / "benchmark.db")
-            for exp in experiments:
-                exp_rows = [r for r in bench["rows"] if r["experiment"] == exp.name]
-                store.insert(exp.name, exp.to_dict(), _aggregate(exp_rows, metrics))
-            store.close()
+        status.update(label="Benchmark finished.", state="complete")
 
-            per_q = pd.DataFrame(bench["rows"])
-            per_q.to_csv(plan.results_dir / "per_question.csv", index=False, encoding="utf-8")
-            summary = pd.DataFrame(
-                [
-                    {"experiment": exp.name, "config": exp.to_dict(), **_aggregate(
-                        [r for r in bench["rows"] if r["experiment"] == exp.name], metrics)}
-                    for exp in experiments
-                ]
-            )
-            summary.to_csv(plan.results_dir / "results.csv", index=False, encoding="utf-8")
-            bench["saved"] = True
-        except Exception:
-            bench["saved"] = False  # read-only cloud mount -> keep results in-memory only
+    bench["done_experiments"] = exp_names
+    bench["source"] = "custom" if custom_questions else "test_set.json"
+    bench["done"] = True
 
-        bench["status"] = "Done."
-        bench["done"] = True
-    except Exception as exc:  # pragma: no cover - surfaces in the UI
-        bench["error"] = str(exc)
-        bench["status"] = f"Failed: {exc}"
-        bench["done"] = True
+    try:
+        from benchmark.store import ResultsStore
+
+        _save_run_to_disk(plan, experiments, metrics, bench)
+        bench["saved"] = True
+    except Exception:
+        bench["saved"] = False  # read-only cloud mount -> keep results in-memory only
+
+    st.session_state.bench = bench
+    return bench
+
+
+def _save_run_to_disk(plan, experiments, metrics: list[str], bench: dict) -> None:
+    from benchmark.store import ResultsStore
+
+    store = ResultsStore(plan.results_dir / "benchmark.db")
+    for exp in experiments:
+        exp_rows = [r for r in bench["rows"] if r["experiment"] == exp.name]
+        store.insert(exp.name, exp.to_dict(), _aggregate(exp_rows, metrics))
+    store.close()
+    per_q = pd.DataFrame(bench["rows"])
+    per_q.to_csv(plan.results_dir / "per_question.csv", index=False, encoding="utf-8")
+    summary = pd.DataFrame(
+        [
+            {"experiment": exp.name, "config": exp.to_dict(), **_aggregate(
+                [r for r in bench["rows"] if r["experiment"] == exp.name], metrics)}
+            for exp in experiments
+        ]
+    )
+    summary.to_csv(plan.results_dir / "results.csv", index=False, encoding="utf-8")
 
 
 def _aggregate(rows: list[dict], metrics: list[str]) -> dict[str, float]:
@@ -222,8 +235,6 @@ def main() -> None:
         st.session_state.pipeline = None
     if "history" not in st.session_state:
         st.session_state.history = []
-    if "bench_running" not in st.session_state:
-        st.session_state.bench_running = False
     if "bench" not in st.session_state:
         st.session_state.bench = {
             "rows": [], "done_experiments": [], "done": False, "status": "",
@@ -331,6 +342,10 @@ def _render_bench_tab(plan) -> None:
         mime="text/csv",
         use_container_width=False,
     )
+
+    using_own_docs = docs_choice == "Upload my own documents" and bool(docs_for_run)
+    questions_mismatch = using_own_docs and not custom_q
+
     if custom_q:
         preview = pd.DataFrame(
             {
@@ -340,6 +355,13 @@ def _render_bench_tab(plan) -> None:
         )
         st.success(f"Using your {q_source}: {len(custom_q)} questions.")
         st.dataframe(preview, use_container_width=True, hide_index=True)
+    elif questions_mismatch:
+        st.error(
+            "⚠️ You uploaded your own document, but haven't given any questions yet. "
+            "The bundled demo questions are about a **different** sample document and "
+            "will NOT match your file — running now would give meaningless results. "
+            "Please type or upload questions about YOUR document above before running."
+        )
     else:
         st.caption(
             f"Nothing picked yet — falling back to the bundled demo test set "
@@ -355,48 +377,41 @@ def _render_bench_tab(plan) -> None:
             f"≈ {len(selected) * n_questions * 4} judge-LLM calls (Groq free tier: 1,000/day)."
         )
     with col_btn:
-        start = st.button("▶ Run benchmark", type="primary", use_container_width=True)
-
-    if start and not st.session_state.bench_running:
-        bench = {
-            "rows": [], "done_experiments": [], "done": False, "status": "Starting...",
-            "saved": None, "error": None, "source": None,
-        }
-        st.session_state.bench = bench
-        st.session_state.bench_running = True
-        st.session_state.config = _pick_config()
-        thread = threading.Thread(
-            target=_run_benchmark_worker,
-            args=(plan, selected, st.session_state.config.metrics, custom_q, docs_for_run),
-            daemon=True,
+        start = st.button(
+            "▶ Run benchmark", type="primary", use_container_width=True,
+            disabled=questions_mismatch,
         )
-        thread.start()
+
+    if start:
+        _run_benchmark_sync(plan, selected, st.session_state.config.metrics, custom_q, docs_for_run)
         st.rerun()
 
     bench = st.session_state.bench
-    _render_progress_block(bench, st.session_state.bench_running)
+    _render_bench_results(bench)
 
 
-@st.fragment(run_every=2)
-def _render_progress_block(bench: dict, running: bool) -> None:
-    if running and not bench.get("done"):
-        st.info(f"Running… {bench.get('status', '')}  \n(this view refreshes automatically every 2s — "
-                "the first ~30-60s is library/model warm-up; then per-question scores appear)")
-    elif bench.get("done"):
-        if bench.get("error"):
-            st.error(f"Benchmark failed: {bench['error']}")
-        else:
-            src = bench.get("source") or "test set"
-            if bench.get("saved"):
-                st.success(f"Benchmark done ({src}) — saved to `results/benchmark.db`.")
-            else:
-                st.info(f"Benchmark done ({src}) — showing results in this session (cloud files are read-only).")
-    else:
-        st.caption("Nothing run yet — pick experiments and press ▶ Run benchmark.")
-
+@st.fragment
+def _render_bench_results(bench: dict) -> None:
     metric_cols = ["context_precision", "context_recall", "faithfulness", "answer_relevancy"]
+
+    if not bench.get("done"):
+        if bench["rows"]:
+            st.warning("Previous run was interrupted — showing partial results below.")
+        else:
+            st.info("Nothing run yet — pick your document, questions and experiment, "
+                    "then press ▶ Run benchmark.")
+            return
+
+    if bench.get("error"):
+        st.error(f"Benchmark failed: {bench['error']}")
+
     with st.container(border=True):
-        st.markdown("**Progress — per-question scores**")
+        st.markdown(
+            "**Per-question scores** — each value is 0-1: "
+            "`context_precision` (relevant chunks shown), `context_recall` (right chunk found), "
+            "`faithfulness` (no hallucination — 🎯 the match-with-your-doc check), "
+            "`answer_relevancy` (answers the question). Empty = doesn't apply to that question."
+        )
         if bench["rows"]:
             df = pd.DataFrame(bench["rows"])
             st.dataframe(
@@ -407,23 +422,27 @@ def _render_progress_block(bench: dict, running: bool) -> None:
         else:
             st.caption("_no questions scored yet_")
 
-    if bench.get("done") and bench["rows"] and not bench.get("error"):
-        runs = _session_runs_from_bench(bench)
-        if runs is not None:
-            st.subheader("Aggregated scores")
-            st.dataframe(
-                runs.style.format(
-                    {c: "{:.4f}" for c in metric_cols if c in runs.columns}, na_rep="-"
-                ),
-                use_container_width=True,
-                hide_index=True,
-            )
-            st.download_button(
-                "⬇️ Download results (CSV)",
-                data=pd.DataFrame(bench["rows"]).to_csv(index=False).encode("utf-8"),
-                file_name="benchmark_results.csv",
-                mime="text/csv",
-            )
+    runs = _session_runs_from_bench(bench)
+    if runs is not None:
+        st.subheader("Aggregated scores")
+        st.dataframe(
+            runs.style.format(
+                {c: "{:.4f}" for c in metric_cols if c in runs.columns}, na_rep="-"
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+        st.download_button(
+            "⬇️ Download results (CSV)",
+            data=pd.DataFrame(bench["rows"]).to_csv(index=False).encode("utf-8"),
+            file_name="benchmark_results.csv",
+            mime="text/csv",
+        )
+        if bench.get("saved") is False:
+            st.info("Results kept in this session only (cloud files are read-only). "
+                    "Run locally with Ollama to persist them.")
+        elif bench.get("saved") is True:
+            st.success("Saved to `results/benchmark.db`.")
 
 
 def _render_test_set_uploader() -> list | None:
