@@ -84,7 +84,10 @@ def _run_benchmark_worker(
                 )
                 row: dict[str, object] = {"experiment": exp.name, "question": q["user_input"]}
                 if per:
-                    row.update({k: v for k, v in per[0].items() if k not in ("user_input", "response")})
+                    for k, v in per[0].items():
+                        if k in ("user_input", "response"):
+                            continue
+                        row[k] = round(v, 4) if isinstance(v, float) else v
                 bench["rows"].append(row)
                 done += 1
                 bench["status"] = f"{exp.name}: {done}/{total} questions scored..."
@@ -277,7 +280,15 @@ def _render_bench_tab(plan) -> None:
     st.caption(
         "Answers each question with every selected experiment and scores it with RAGAS "
         "(judge LLM = Groq on the cloud, Ollama locally). Results appear live, question "
-        "by question. Use the default 8 test questions OR upload your own."
+        "by question. Use the bundled test questions OR upload your own."
+    )
+    st.markdown(
+        "**How to read the scores:**  \n"
+        "• **faithfulness** = the answer stays true to the docs (the hallucination check).  \n"
+        "• **context_recall** = the right chunk was found (needs a `reference` / expected answer).  \n"
+        "• **context_precision** = of the chunks shown, how many were relevant (needs the exact "
+        "supporting passage — often empty for imported tests).  \n"
+        "• **answer_relevancy** = the answer actually addresses the question asked."
     )
 
     exp_names = [e.name for e in plan.experiments]
@@ -299,9 +310,7 @@ def _render_bench_tab(plan) -> None:
     else:
         st.caption(
             f"Default test set (`{plan.test_set}`): **{load_test_set_count(plan)} questions**. "
-            "CSV format (col A `question`, col B `reference` = expected answer from the docs) "
-            "— `context_recall` will show whether the right chunk was found, `faithfulness` "
-            "whether the answer stays true to the docs."
+            "CSV format (col A `question`, col B `reference` = expected answer from the docs)."
         )
 
     col_note, col_btn = st.columns([3, 1])
@@ -331,26 +340,36 @@ def _render_bench_tab(plan) -> None:
         st.rerun()
 
     bench = st.session_state.bench
+    _render_progress_block(bench, st.session_state.bench_running)
 
-    with st.container(border=True):
-        if st.session_state.bench_running and not bench.get("done"):
-            st.info(f"Running… {bench.get('status', '')}  \n(you can switch tabs, progress keeps updating)")
-        elif bench.get("done"):
-            if bench.get("error"):
-                st.error(f"Benchmark failed: {bench['error']}")
-            else:
-                src = bench.get("source") or "test_set.json"
-                if bench.get("saved"):
-                    st.success(f"Benchmark done ({src}) — saved to `results/benchmark.db`.")
-                else:
-                    st.info(f"Benchmark done ({src}) — showing results in this session (cloud files are read-only).")
+
+@st.fragment(run_every=2)
+def _render_progress_block(bench: dict, running: bool) -> None:
+    if running and not bench.get("done"):
+        st.info(f"Running… {bench.get('status', '')}  \n(this view refreshes automatically every 2s — "
+                "you can switch tabs, progress keeps updating)")
+    elif bench.get("done"):
+        if bench.get("error"):
+            st.error(f"Benchmark failed: {bench['error']}")
         else:
-            st.caption("Nothing run yet — pick experiments and press ▶ Run benchmark.")
+            src = bench.get("source") or "test set"
+            if bench.get("saved"):
+                st.success(f"Benchmark done ({src}) — saved to `results/benchmark.db`.")
+            else:
+                st.info(f"Benchmark done ({src}) — showing results in this session (cloud files are read-only).")
+    else:
+        st.caption("Nothing run yet — pick experiments and press ▶ Run benchmark.")
 
+    metric_cols = ["context_precision", "context_recall", "faithfulness", "answer_relevancy"]
     with st.container(border=True):
         st.markdown("**Progress — per-question scores**")
         if bench["rows"]:
-            st.dataframe(pd.DataFrame(bench["rows"]), use_container_width=True, hide_index=True)
+            df = pd.DataFrame(bench["rows"])
+            st.dataframe(
+                df.style.format({c: "{:.4f}" for c in metric_cols if c in df.columns}, na_rep="-"),
+                use_container_width=True,
+                hide_index=True,
+            )
         else:
             st.caption("_no questions scored yet_")
 
@@ -358,7 +377,19 @@ def _render_bench_tab(plan) -> None:
         runs = _session_runs_from_bench(bench)
         if runs is not None:
             st.subheader("Aggregated scores")
-            st.dataframe(runs, use_container_width=True, hide_index=True)
+            st.dataframe(
+                runs.style.format(
+                    {c: "{:.4f}" for c in metric_cols if c in runs.columns}, na_rep="-"
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.download_button(
+                "⬇️ Download results (CSV)",
+                data=pd.DataFrame(bench["rows"]).to_csv(index=False).encode("utf-8"),
+                file_name="benchmark_results.csv",
+                mime="text/csv",
+            )
 
 
 def _render_test_set_uploader():
