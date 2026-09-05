@@ -39,10 +39,18 @@ def _metric_bar_chart(df: pd.DataFrame, col: str) -> None:
     st.bar_chart(small.set_index("experiment"), color=col, height=300)
 
 
-def render_scores(results_dir: str | Path = "results") -> None:
-    """Render the benchmark scoreboard. Uses results_dir if it has a gitignored
-    local run, otherwise falls back to the committed sample_results/ folder so the
+def render_scores(
+    results_dir: str | Path = "results",
+    session_runs: pd.DataFrame | None = None,
+    session_per_q: pd.DataFrame | None = None,
+) -> None:
+    """Render the benchmark scoreboard. Priority: in-memory run from this session,
+    then local results_dir (gitignored), then committed sample_results/ so the
     cloud app still shows scores."""
+    if session_runs is not None and not session_runs.empty:
+        _render_session(session_runs, session_per_q)
+        return
+
     db_path = Path(results_dir) / "benchmark.db"
     if db_path.exists():
         _render_from_db(db_path)
@@ -54,9 +62,24 @@ def render_scores(results_dir: str | Path = "results") -> None:
         return
 
     st.warning(
-        "No scores yet. Run `python run_benchmark.py` on your machine, then commit "
-        "the results - or re-run here. Scores appear in this tab."
+        "No scores yet. Run a benchmark from the ▶ Run benchmark tab, or "
+        "`python run_benchmark.py` on your machine."
     )
+
+
+def _render_session(runs: pd.DataFrame, per_q: pd.DataFrame | None) -> None:
+    metric_cols = [c for c in runs.columns if c in METRIC_INFO]
+    st.caption("Showing the benchmark you just ran in this session (not yet saved to disk).")
+    st.markdown("## Latest run per experiment")
+    st.dataframe(
+        runs.style.format({c: "{:.4f}" for c in metric_cols}, na_rep="-"),
+        use_container_width=True,
+        hide_index=True,
+    )
+    _render_glance_and_charts(runs, metric_cols)
+    if per_q is not None and not per_q.empty and "experiment" in per_q.columns:
+        exp_name = st.selectbox("Per-question detail", sorted(per_q["experiment"].astype(str).unique()))
+        st.dataframe(per_q[per_q["experiment"] == exp_name], use_container_width=True, hide_index=True)
 
 
 def _render_from_db(db_path: Path) -> None:
