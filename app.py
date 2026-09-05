@@ -38,15 +38,16 @@ def _run_benchmark_worker(
 ) -> None:
     """Runs the RAGAS benchmark in a background thread, appending per-question
     rows to a shared dict so the UI can show progress live."""
-    from benchmark.store import ResultsStore
-    from evaluation.ragas_eval import run_ragas_evaluation
-    from evaluation.testset import load_test_set
-    from rag.loader import load_documents
-    from rag.pipeline import RAGPipeline
-
     bench = st.session_state["bench"]
-    bench["status"] = "Loading documents & test questions..."
+    bench["status"] = "Warming up (importing libraries + embedding model)…"
     try:
+        from benchmark.store import ResultsStore
+        from evaluation.ragas_eval import run_ragas_evaluation
+        from evaluation.testset import load_test_set
+        from rag.loader import load_documents
+        from rag.pipeline import RAGPipeline
+
+        bench["status"] = "Loading documents & test questions..."
         documents = documents if documents is not None else load_documents(plan.docs_dir)
         test_questions = custom_questions or load_test_set(plan.test_set)
         experiments = [e for e in plan.experiments if e.name in exp_names]
@@ -363,7 +364,7 @@ def _render_bench_tab(plan) -> None:
 def _render_progress_block(bench: dict, running: bool) -> None:
     if running and not bench.get("done"):
         st.info(f"Running… {bench.get('status', '')}  \n(this view refreshes automatically every 2s — "
-                "you can switch tabs, progress keeps updating)")
+                "the first ~30-60s is library/model warm-up; then per-question scores appear)")
     elif bench.get("done"):
         if bench.get("error"):
             st.error(f"Benchmark failed: {bench['error']}")
