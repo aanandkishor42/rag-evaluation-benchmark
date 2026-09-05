@@ -4,6 +4,7 @@ import io
 import json
 import os
 import tempfile
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -86,10 +87,14 @@ def _run_benchmark_sync(
         table = st.empty()
 
         for exp in experiments:
-            status.update(label=f"Indexing + answering with `{exp.name}`…")
+            status.update(label=f"Indexing documents with `{exp.name}`…")
             pipeline = RAGPipeline(exp, documents)
-            for q in test_questions:
+            for qi, q in enumerate(test_questions, 1):
+                q_label = q["user_input"][:50]
+                t0 = time.time()
+                status.update(label=f"💬 Answering ({qi}/{len(test_questions)}): {q_label}…")
                 result = pipeline.answer(q["user_input"], q.get("reference", ""), q.get("reference_contexts"))
+                status.update(label=f"🔍 Scoring ({qi}/{len(test_questions)}): {q_label}… (takes ~1-3 min on local Ollama)")
                 sample = [
                     {
                         "user_input": q["user_input"],
@@ -124,6 +129,7 @@ def _run_benchmark_sync(
                     row["status"] = "ok"
                 bench["rows"].append(row)
                 done += 1
+                elapsed = int(time.time() - t0)
                 df = pd.DataFrame(bench["rows"])
                 table.dataframe(
                     df.style.format({c: "{:.4f}" for c in metric_cols if c in df.columns},
@@ -131,7 +137,7 @@ def _run_benchmark_sync(
                     use_container_width=True, hide_index=True,
                 )
                 progress.progress(done / total)
-                status.update(label=f"{exp.name}: {done}/{total} questions scored…")
+                status.update(label=f"✅ {done}/{total} done ({elapsed}s so far) — next question…")
 
         unscored = [r for r in bench["rows"] if r.get("status") != "ok"]
         label = f"Benchmark finished — {len(unscored)}/{len(bench['rows'])} question(s) couldn't be scored."
