@@ -18,13 +18,6 @@ st.set_page_config(
 
 SUPPORTED_FORMATS = ["txt", "md", "pdf"]
 
-_TEST_SET_TEMPLATE_CSV = (
-    "question,reference\n"
-    "What is the company's refund policy?,Refunds are issued within 14 days of purchase.\n"
-    "Which products include a lifetime warranty?,Only the Pro tier products come with a lifetime warranty.\n"
-    "What hours is support available?,Support is available 24/7 for enterprise customers.\n"
-)
-
 
 def _pick_config() -> object:
     from rag.config import load_config
@@ -41,7 +34,7 @@ def _load_plan() -> object:
 
 
 def _run_benchmark_worker(
-    plan, exp_names: list[str], metrics: list[str], custom_questions=None
+    plan, exp_names: list[str], metrics: list[str], custom_questions=None, documents=None
 ) -> None:
     """Runs the RAGAS benchmark in a background thread, appending per-question
     rows to a shared dict so the UI can show progress live."""
@@ -54,7 +47,7 @@ def _run_benchmark_worker(
     bench = st.session_state["bench"]
     bench["status"] = "Loading documents & test questions..."
     try:
-        documents = load_documents(plan.docs_dir)
+        documents = documents if documents is not None else load_documents(plan.docs_dir)
         test_questions = custom_questions or load_test_set(plan.test_set)
         experiments = [e for e in plan.experiments if e.name in exp_names]
         total = len(experiments) * len(test_questions)
@@ -135,45 +128,43 @@ def _aggregate(rows: list[dict], metrics: list[str]) -> dict[str, float]:
 
 
 def _build_index(uploaded_files: list) -> str:
+    tmp = Path(st.session_state.tmp_dir)
+    documents = _build_documents(uploaded_files, tmp)
+    if not documents:
+        return "no_files"
+    st.session_state.pipeline = RAGPipeline(st.session_state.config, documents)
+    return "ok"
+
+
+def _build_documents(uploaded_files: list, tmp_dir: Path) -> list:
+    from langchain_community.document_loaders import TextLoader
     from langchain_core.documents import Document
 
-    from rag.loader import SUPPORTED_EXTS
-    from rag.pipeline import RAGPipeline
+    from rag.loader import SUPPORTED_EXTS, _load_pdf
 
-    exp = st.session_state.config
-    tmp = Path(st.session_state.tmp_dir)
-    files = []
+    saved = []
     for f in uploaded_files:
         suffix = Path(f.name).suffix.lower()
         if suffix not in SUPPORTED_EXTS:
             continue
-        dest = tmp / f.name
+        dest = tmp_dir / f.name
         dest.write_bytes(f.getvalue())
-        files.append(dest)
-
-    if not files:
-        return "no_files"
+        saved.append(dest)
+    if not saved:
+        return []
 
     documents: list[Document] = []
-    from rag.loader import _load_pdf, load_documents
-
-    supported = [p for p in tmp.rglob("*") if p.suffix.lower() in SUPPORTED_EXTS]
-    for path in supported:
+    for path in tmp_dir.rglob("*"):
+        if path.suffix.lower() not in SUPPORTED_EXTS:
+            continue
         if path.suffix.lower() == ".pdf":
             documents.extend(_load_pdf(path))
         else:
-            from langchain_community.document_loaders import TextLoader
-
             loader = TextLoader(str(path), encoding="utf-8")
             for doc in loader.load():
                 doc.metadata = {"source": path.name}
                 documents.append(doc)
-
-    if not documents:
-        return "no_files"
-
-    st.session_state.pipeline = RAGPipeline(exp, documents)
-    return "ok"
+    return documents
 
 
 def _render_sources(result) -> None:
@@ -296,15 +287,38 @@ def _render_bench_tab(plan) -> None:
         "Experiments to run", exp_names, default=[exp_names[0]], key="bench_exp_select"
     )
 
-    st.markdown("**Questions to benchmark**")
+    st.markdown("**1️⃣ Documents to benchmark against**")
+    docs_choice = st.radio(
+        "Choose the source documents for this run:",
+        ["Bundled sample docs", "Upload my own documents"],
+        horizontal=True,
+        key="bench_docs_choice",
+    )
+    docs_for_run = None
+    if docs_choice == "Upload my own documents":
+        files = st.file_uploader(
+            "Upload your docs (.txt / .md / .pdf)", type=SUPPORTED_FORMATS,
+            accept_multiple_files=True, key="bench_docs",
+        )
+        if files:
+            tmpd = Path(tempfile.mkdtemp(prefix="benchdocs_"))
+            docs_for_run = _build_documents(files, tmpd)
+            if docs_for_run:
+                st.success(f"{len(docs_for_run)} document(s) loaded for this benchmark run.")
+            else:
+                st.warning("No supported files found. Use .txt, .md or .pdf.")
+        else:
+            st.caption("_no files chosen yet_")
+
+    st.markdown("**2️⃣ Questions to benchmark**")
+    custom_q = _render_test_set_uploader()
     st.download_button(
-        "📎 Download template.csv",
-        data=_TEST_SET_TEMPLATE_CSV,
+        "📎 Template CSV (with your current questions)",
+        data=_template_csv(plan, custom_q),
         file_name="template.csv",
         mime="text/csv",
         use_container_width=False,
     )
-    custom_q = _render_test_set_uploader()
     if custom_q:
         st.success(f"Using your uploaded test set: {len(custom_q)} questions.")
     else:
@@ -333,7 +347,7 @@ def _render_bench_tab(plan) -> None:
         st.session_state.config = _pick_config()
         thread = threading.Thread(
             target=_run_benchmark_worker,
-            args=(plan, selected, st.session_state.config.metrics, custom_q),
+            args=(plan, selected, st.session_state.config.metrics, custom_q, docs_for_run),
             daemon=True,
         )
         thread.start()
@@ -449,6 +463,20 @@ def _parse_test_set_bytes(filename: str, data: bytes) -> list[dict]:
                 item["reference"] = str(ref).strip()
             parsed.append(item)
     return parsed
+
+
+def _template_csv(plan, custom_q=None) -> str:
+    """Pre-fills the downloadable template with the current questions (your
+    uploaded test set if any, otherwise the bundled one)."""
+    from evaluation.testset import load_test_set
+
+    qs = custom_q if custom_q is not None else load_test_set(plan.test_set)
+    lines = ["question,reference"]
+    for q in qs:
+        text = str(q["user_input"]).replace('"', '""')
+        ref = str(q.get("reference", "")).replace('"', '""')
+        lines.append(f'"{text}","{ref}"')
+    return "\n".join(lines)
 
 
 def load_test_set_count(plan) -> int:
