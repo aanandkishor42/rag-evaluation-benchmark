@@ -60,9 +60,11 @@ class RAGPipeline:
 
     def _generator(self) -> ChatOpenAI:
         kwargs: dict[str, object] = {"model": self.config.llm, "temperature": 0}
-        if self.config.provider == "ollama":
+        if self.config.provider in ("ollama", "groq"):
+            from rag.config import api_key_for
+
             kwargs["base_url"] = self.config.resolved_base_url
-            kwargs["api_key"] = "ollama"
+            kwargs["api_key"] = api_key_for(self.config.provider) or "ollama"
         return ChatOpenAI(**kwargs)
 
     def answer(self, question: str, reference: str = "", reference_contexts: list[str] | None = None) -> RetrievedResult:

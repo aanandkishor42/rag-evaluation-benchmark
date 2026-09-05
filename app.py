@@ -15,9 +15,12 @@ SUPPORTED_FORMATS = ["txt", "md", "pdf"]
 
 
 def _pick_config() -> object:
+    import os
+
     from rag.config import load_config
 
-    plan = load_config("config.yaml")
+    cfg_file = os.getenv("RAG_CONFIG", "config.yaml")
+    plan = load_config(cfg_file)
     return plan.experiments[0]
 
 

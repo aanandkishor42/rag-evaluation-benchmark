@@ -40,13 +40,22 @@ def resolve_metrics(names: list[str]) -> list[str]:
 
 def _chat_llm(model: str, provider: str, base_url: str | None) -> ChatOpenAI:
     kwargs: dict[str, Any] = {"model": model, "temperature": 0}
-    if provider == "ollama":
-        kwargs["base_url"] = base_url or DEFAULT_OLLAMA_BASE_URL
-        kwargs["api_key"] = "ollama"
+    if provider in ("ollama", "groq"):
+        from rag.config import api_key_for
+
+        kwargs["base_url"] = (
+            base_url
+            or ("https://api.groq.com/openai/v1" if provider == "groq" else DEFAULT_OLLAMA_BASE_URL)
+        )
+        kwargs["api_key"] = api_key_for(provider) or "ollama"
     return ChatOpenAI(**kwargs)
 
 
-def _langchain_embeddings(model: str, provider: str, base_url: str | None):
+def _langchain_embeddings(model: str, provider: str, base_url: str | None, embedding_backend: str):
+    if embedding_backend in ("huggingface", "hf"):
+        from rag.embeddings import _huggingface_embeddings
+
+        return _huggingface_embeddings(model)
     if provider == "ollama":
         return OllamaOpenAIEmbeddings(
             model=model,
@@ -63,6 +72,7 @@ def run_ragas_evaluation(
     embedding_model: str,
     provider: str = "openai",
     base_url: str | None = None,
+    embedding_backend: str = "openai",
 ) -> tuple[dict[str, float], list[dict[str, Any]]]:
     """Evaluate generated answers + retrieved contexts with RAGAS.
 
@@ -83,7 +93,7 @@ def run_ragas_evaluation(
     needs_embeddings = "answer_relevancy" in resolved
     embeddings = (
         LangchainEmbeddingsWrapper(
-            _langchain_embeddings(embedding_model, provider, base_url),
+            _langchain_embeddings(embedding_model, provider, base_url, embedding_backend),
             run_config=config,
         )
         if needs_embeddings

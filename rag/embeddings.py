@@ -86,4 +86,21 @@ def build_embeddings(
                 api_key="ollama",
             )
         return OpenAIEmbeddings(model=model)
-    raise ValueError(f"Unknown embedding_backend '{backend}'. Use 'openai' or 'hash'.")
+    if backend in ("huggingface", "hf"):
+        return _huggingface_embeddings(model)
+    raise ValueError(
+        f"Unknown embedding_backend '{backend}'. Use 'openai', 'hash' or 'huggingface'."
+    )
+
+
+def _huggingface_embeddings(model: str) -> Embeddings:
+    """Free HuggingFace Inference API embeddings (needs HF_TOKEN in the environment)."""
+    import os
+
+    from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
+
+    model = model or "sentence-transformers/all-MiniLM-L6-v2"
+    return HuggingFaceInferenceAPIEmbeddings(
+        model_name=model,
+        api_key=os.getenv("HF_TOKEN") or "",
+    )

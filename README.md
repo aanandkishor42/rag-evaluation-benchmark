@@ -73,8 +73,11 @@ A beginner-friendly web UI ships in this repo - upload your own documents, click
 .venv\Scripts\python -m streamlit run app.py
 ```
 
-Then open http://localhost:8501. To share it with the public (free for visitors, on
-a small server), follow `DEPLOY.md`.
+Then open http://localhost:8501. To share it with the public, you have two free options:
+
+- **Free forever, no server (Streamlit Cloud + Groq)** - follow the quick steps in
+  `DEPLOY.md`. Costs $0 (Groq free tier = 30 req/min, HuggingFace free embeddings).
+- **Own small server (Ollama, unlimited local model)** - follow the VPS path in `DEPLOY.md`.
 
 ## Scores dashboard (browser)
 

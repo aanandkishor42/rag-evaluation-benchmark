@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,19 @@ DEFAULT_CHUNK_OVERLAP = 80
 DEFAULT_TOP_K = 3
 DEFAULT_METRICS = ["context_precision", "context_recall", "faithfulness", "answer_relevancy"]
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1"
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+
+API_KEY_ENV = {
+    "openai": "OPENAI_API_KEY",
+    "groq": "GROQ_API_KEY",
+}
+
+
+def api_key_for(provider: str) -> str | None:
+    """Return the API key for a provider from the environment (None for local Ollama)."""
+    if provider == "ollama":
+        return None
+    return os.getenv(API_KEY_ENV.get(provider, "OPENAI_API_KEY"))
 
 
 @dataclass
@@ -35,7 +49,11 @@ class ExperimentConfig:
 
     @property
     def resolved_base_url(self) -> str:
-        return self.base_url or DEFAULT_OLLAMA_BASE_URL
+        if self.base_url:
+            return self.base_url
+        if self.provider == "groq":
+            return GROQ_BASE_URL
+        return DEFAULT_OLLAMA_BASE_URL
 
     @property
     def experiment_id(self) -> str:

@@ -1,32 +1,43 @@
-# Deploy the RAG web app publicly (free for visitors)
+# Deploy the RAG web app publicly (free)
 
-This guide turns the local `app.py` (upload documents + chat) into a public website
-where anyone can upload their own files and ask questions. Visitors pay nothing -
-you run the site on a small server, and the LLM runs free on that server via Ollama.
+Two free ways. Pick one:
 
-## Step 0 - Test on your own laptop first (free, 2 minutes)
+## Option A - Streamlit Cloud + Groq (recommended: $0, 15 minutes)
 
-1. Make sure the Ollama app is running (system tray icon) and models are pulled:
-   ```
-   ollama pull llama3.2:3b
-   ollama pull nomic-embed-text
-   ```
-2. Start the app:
-   ```
-   .venv\Scripts\activate
-   streamlit run app.py
-   ```
-3. Your browser opens at `http://localhost:8501`. Upload a file, click
-   "Build index", then ask a question.
-4. Same-Wi-Fi sharing (free, no server needed):
-   ```
-   streamlit run app.py --server.address 0.0.0.0 --server.port 8501
-   ```
-   Others on your network open `http://<YOUR-PC-IP>:8501` (find your IP with `ipconfig`).
+Groq's free tier (30 req/min, 1,000 req/day, no credit card) replaces the local
+Ollama model on the cloud, and HuggingFace gives free embeddings. There is a second
+config for this: `config.cloud.yaml`.
 
-## Step 1 - Rent a small server (cheap, ~$5/month - or free!)
+1. **Sign up for 2 free API keys:**
+   - Groq: https://console.groq.com -> API Keys -> create key (starts with `gsk_`)
+   - HuggingFace: https://huggingface.co -> Settings -> Access Tokens -> create read token (starts with `hf_`)
+2. **Deploy:**
+   - Go to https://share.streamlit.io and sign in with your GitHub account
+   - "Create app" -> pick your repo `rag-evaluation-benchmark`
+   - Main file: `app.py`
+   - Click **Deploy**
+3. **Add secrets** (after first deploy): on the app page go to Settings -> Secrets and paste:
+   ```
+   GROQ_API_KEY=gsk_your-key-here
+   HF_TOKEN=hf_your-token-here
+   RAG_CONFIG=config.cloud.yaml
+   ```
+   Then press Rerun.
+4. Open your app's URL - it's live, public, and free.
 
-Pick ONE of these:
+Notes:
+- The hosted app answers questions only from uploaded documents (uploaded docs are
+  session-only). The full RAGAS benchmark is better run locally (`python run_benchmark.py`)
+  because Groq's free tier rate-limits judge calls.
+- `dashboard.py` shows whatever is in `results/`; on a fresh cloud deploy that's empty
+  until you commit results or run the benchmark.
+
+## Option B - Own small server + local Ollama (visitors unlimited, ~$5/month)
+
+> First test locally (free): make sure the Ollama app is running, then
+> `streamlit run app.py` -> upload a file -> Build index -> ask a question.
+
+Pick ONE server:
 
 | Option | Cost | Notes |
 | --- | --- | --- |
@@ -36,7 +47,7 @@ Pick ONE of these:
 
 Requirements: **2 vCPU + 4 GB RAM minimum** (llama3.2:3b + nomic-embed-text need ~4 GB).
 
-## Step 2 - Connect and install Ollama
+## Step B1 - Connect and install Ollama
 
 Open a terminal on your own PC and SSH to the server (replace the IP):
 
@@ -57,7 +68,7 @@ Check it works:
 ollama run llama3.2:3b "say hi"
 ```
 
-## Step 3 - Get the project onto the server
+## Step B2 - Get the project onto the server
 
 From your own PC:
 
@@ -74,7 +85,7 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-## Step 4 - Start the website
+## Step B3 - Start the website
 
 ```
 .venv/bin/streamlit run app.py --server.address 0.0.0.0 --server.port 8501 --server.headless true
@@ -83,7 +94,7 @@ python3 -m venv .venv
 Open the server's firewall port 8501 (in your cloud provider's dashboard, allow TCP 8501).
 The website is now live at: `http://YOUR_SERVER_IP:8501`
 
-## Step 5 - Keep it running (optional)
+## Step B4 - Keep it running (optional)
 
 Run it in the background so it survives when you close the SSH window:
 
@@ -93,7 +104,7 @@ nohup .venv/bin/streamlit run app.py --server.address 0.0.0.0 --server.port 8501
 
 To stop it later: `pkill -f streamlit`
 
-## Step 6 - Nice domain (optional, free)
+## Step B5 - Nice domain (optional, free)
 
 - Use `http://YOUR_SERVER_IP:8501` directly (works, no TLS), or
 - Free DNS: create an account at duckdns.org, put your server IP in, and your site

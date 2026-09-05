@@ -16,6 +16,9 @@ models:
   # llm: gpt-4o-mini
   # judge_llm: gpt-4o-mini
   # embeddings: text-embedding-3-small
+  #
+  # For the free public streamlit.cloud deployment use config.cloud.yaml instead
+  # (Groq judge + HuggingFace embeddings - both free, no local model needed).
 
 retrieval:
   top_k: 3

@@ -77,6 +77,7 @@ def evaluate_samples(
         embedding_model=experiment.embedding_model,
         provider=experiment.provider,
         base_url=experiment.base_url,
+        embedding_backend=experiment.embedding_backend,
     )
 
 
