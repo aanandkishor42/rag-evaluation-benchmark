@@ -138,6 +138,12 @@ def _render_recent(recent: pd.DataFrame) -> None:
 
 
 def _render_glance_and_charts(recent: pd.DataFrame, metric_cols: list[str]) -> None:
+    if not metric_cols:
+        st.caption(
+            "No metric values in this run — the judge couldn't score these questions "
+            "(check Groq quota / logs, or the answers were refusals)."
+        )
+        return
     st.markdown("## Scores at a glance")
     cols = st.columns(len(metric_cols))
     for col, box in zip(metric_cols, cols):

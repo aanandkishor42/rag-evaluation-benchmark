@@ -75,7 +75,11 @@ def _run_benchmark_sync(
                     sample, metrics, exp.judge_llm, exp.embedding_model,
                     exp.provider, exp.base_url, exp.embedding_backend,
                 )
-                row: dict[str, object] = {"experiment": exp.name, "question": q["user_input"]}
+                row: dict[str, object] = {
+                    "experiment": exp.name,
+                    "question": q["user_input"],
+                    "answer": result.answer,
+                }
                 if per:
                     for k, v in per[0].items():
                         if k in ("user_input", "response"):
@@ -414,6 +418,8 @@ def _render_bench_results(bench: dict) -> None:
         )
         if bench["rows"]:
             df = pd.DataFrame(bench["rows"])
+            if "answer" in df.columns:
+                df["answer"] = df["answer"].fillna("").astype(str).str.slice(0, 160)
             st.dataframe(
                 df.style.format({c: "{:.4f}" for c in metric_cols if c in df.columns}, na_rep="-"),
                 use_container_width=True,
