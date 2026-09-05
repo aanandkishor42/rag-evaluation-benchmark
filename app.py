@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import tempfile
 import time
 from pathlib import Path
@@ -101,6 +102,7 @@ def _run_benchmark_sync(
                         "retrieved_contexts": result.contexts,
                         "response": result.answer,
                         "reference": result.reference,
+                        "reference_contexts": result.reference_contexts,
                     }
                 ]
                 _, per = run_ragas_evaluation(
@@ -408,10 +410,17 @@ def _render_bench_tab(plan) -> None:
             {
                 "question": [q["user_input"] for q in custom_q],
                 "expected answer (reference)": [q.get("reference", "") for q in custom_q],
+                "has reference": ["✓" if str(q.get("reference", "")).strip() else "—" for q in custom_q],
             }
         )
         st.success(f"Using your {q_source}: {len(custom_q)} questions.")
         st.dataframe(preview, use_container_width=True, hide_index=True)
+        n_refs = int((preview["has reference"] == "✓").sum())
+        if n_refs < len(custom_q):
+            st.caption(
+                f"ℹ️ `context_recall` scores only the **{n_refs}** question(s) that have a reference — "
+                "the rest show `-`."
+            )
     elif questions_mismatch:
         st.error(
             "⚠️ You uploaded your own document, but haven't given any questions yet. "
@@ -547,19 +556,22 @@ def _questions_from_textareas() -> list | None:
         placeholder="What is the refund policy?\nWhich product has a lifetime warranty?",
     )
     answers = st.text_area(
-        "Expected answers — same order, one per line (optional)",
+        "Expected answers — same order, one paragraph per question "
+        "(separate each answer with a **blank line**; powers `context_recall`)",
         key="bench_a_text",
-        height=90,
+        height=120,
     )
     q_lines = [ln.strip().strip('"') for ln in questions.splitlines() if ln.strip()]
-    a_lines = [ln.strip().strip('"') for ln in answers.splitlines() if ln.strip()]
+    a_paras = [p.strip() for p in re.split(r"\n\s*\n", answers) if p.strip()]
+    if len(a_paras) == 1 and "\n" in answers:
+        a_paras = [ln.strip() for ln in answers.splitlines() if ln.strip()]
     if not q_lines:
         return None
     parsed = []
     for i, q in enumerate(q_lines):
         item = {"user_input": q}
-        if i < len(a_lines) and a_lines[i]:
-            item["reference"] = a_lines[i]
+        if i < len(a_paras) and a_paras[i]:
+            item["reference"] = a_paras[i]
         parsed.append(item)
     return parsed
 

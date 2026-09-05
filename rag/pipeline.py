@@ -74,6 +74,13 @@ class RAGPipeline:
         contexts = [d.page_content for d in docs]
         sources = [d.metadata.get("source", "?") for d in docs]
 
+        # Ground-truth contexts for context_recall: the chunks that should have been
+        # retrieved, found by searching with the reference answer itself.
+        if not reference_contexts and reference.strip():
+            reference_contexts = [
+                d.page_content for d in self.store.similarity_search(reference, k=self.config.top_k)
+            ]
+
         answer = self._generate_answer(question, contexts)
         return RetrievedResult(
             question=question,
