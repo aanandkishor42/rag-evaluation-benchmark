@@ -32,6 +32,20 @@ def _load_plan() -> object:
     return load_config(os.getenv("RAG_CONFIG", "config.yaml"))
 
 
+def _ping_judge(exp) -> str:
+    """Cheap 1-call ping to the judge provider so failures show *before* the run."""
+    try:
+        from evaluation.ragas_eval import _chat_llm
+
+        llm = _chat_llm(exp.judge_llm, exp.provider, exp.base_url)
+        out = llm.invoke("Reply with exactly: OK")
+        text = (getattr(out, "content", "") or "").strip()
+        return "Judge online ✓ (provider responded)" if text else "Judge online ✓"
+    except Exception as exc:  # noqa: BLE001
+        msg = str(exc).replace("\n", " ")[:300]
+        return f"⚠️ Judge check FAILED — {msg}"
+
+
 def _run_benchmark_sync(
     plan, exp_names: list[str], metrics: list[str], custom_questions=None, documents=None
 ) -> dict:
@@ -53,6 +67,9 @@ def _run_benchmark_sync(
         documents = documents if documents is not None else load_documents(plan.docs_dir)
         test_questions = custom_questions or load_test_set(plan.test_set)
         experiments = [e for e in plan.experiments if e.name in exp_names]
+        first_exp = experiments[0]
+        ping = _ping_judge(first_exp)
+        st.write(ping)
         total = len(experiments) * len(test_questions)
         done = 0
         progress = st.progress(0.0)
@@ -84,7 +101,17 @@ def _run_benchmark_sync(
                     for k, v in per[0].items():
                         if k in ("user_input", "response"):
                             continue
+                        if isinstance(v, float) and pd.isna(v):
+                            continue
                         row[k] = round(v, 4) if isinstance(v, float) else v
+                scored = any(k in row for k in metric_cols)
+                if not scored:
+                    row["status"] = (
+                        "no answer (refusal/error)" if not (result.answer or "").strip()
+                        else "judge didn't score (quota / connection?)"
+                    )
+                else:
+                    row["status"] = "ok"
                 bench["rows"].append(row)
                 done += 1
                 df = pd.DataFrame(bench["rows"])
@@ -96,7 +123,10 @@ def _run_benchmark_sync(
                 progress.progress(done / total)
                 status.update(label=f"{exp.name}: {done}/{total} questions scored…")
 
-        status.update(label="Benchmark finished.", state="complete")
+        unscored = [r for r in bench["rows"] if r.get("status") != "ok"]
+        label = f"Benchmark finished — {len(unscored)}/{len(bench['rows'])} question(s) couldn't be scored."
+        label += " Check the `status` column & judge ping above." if unscored else " All questions scored ✓"
+        status.update(label=label, state="complete")
 
     bench["done_experiments"] = exp_names
     bench["source"] = "custom" if custom_questions else "test_set.json"
