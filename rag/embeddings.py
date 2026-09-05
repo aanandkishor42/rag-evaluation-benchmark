@@ -88,8 +88,25 @@ def build_embeddings(
         return OpenAIEmbeddings(model=model)
     if backend in ("huggingface", "hf"):
         return _huggingface_embeddings(model)
+    if backend == "fastembed":
+        return _fastembed_embeddings(model)
     raise ValueError(
-        f"Unknown embedding_backend '{backend}'. Use 'openai', 'hash' or 'huggingface'."
+        f"Unknown embedding_backend '{backend}'. "
+        "Use 'openai', 'hash', 'huggingface' or 'fastembed'."
+    )
+
+
+def _fastembed_embeddings(model: str) -> Embeddings:
+    """Free embeddings that run locally on CPU (no API key, no network quota)."""
+    import os
+
+    from langchain_community.embeddings import FastEmbedEmbeddings
+
+    model = model or "BAAI/bge-small-en-v1.5"
+    return FastEmbedEmbeddings(
+        model_name=model,
+        max_length=512,
+        cache_dir=os.path.expanduser("~/fastembed_cache"),
     )
 
 

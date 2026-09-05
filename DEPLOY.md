@@ -5,12 +5,11 @@ Two free ways. Pick one:
 ## Option A - Streamlit Cloud + Groq (recommended: $0, 15 minutes)
 
 Groq's free tier (30 req/min, 1,000 req/day, no credit card) replaces the local
-Ollama model on the cloud, and HuggingFace gives free embeddings. There is a second
-config for this: `config.cloud.yaml`.
+Ollama model on the cloud. Embeddings run locally on the cloud CPU via FastEmbed
+(free, no API key). There is a second config for this: `config.cloud.yaml`.
 
-1. **Sign up for 2 free API keys:**
+1. **Sign up for the free Groq API key:**
    - Groq: https://console.groq.com -> API Keys -> create key (starts with `gsk_`)
-   - HuggingFace: https://huggingface.co -> Settings -> Access Tokens -> create read token (starts with `hf_`)
 2. **Deploy:**
    - Go to https://share.streamlit.io and sign in with your GitHub account
    - "Create app" -> pick your repo `rag-evaluation-benchmark`
@@ -19,9 +18,9 @@ config for this: `config.cloud.yaml`.
 3. **Add secrets** (after first deploy): on the app page go to Settings -> Secrets and paste:
    ```
    GROQ_API_KEY=gsk_your-key-here
-   HF_TOKEN=hf_your-token-here
    RAG_CONFIG=config.cloud.yaml
    ```
+   (HF_TOKEN is not needed - embeddings run locally with FastEmbed.)
    Then press Rerun.
 4. Open your app's URL - it's live, public, and free.
 

@@ -10,8 +10,8 @@ models:
   base_url: https://api.groq.com/openai/v1
   llm: openai/gpt-oss-20b           # answer generation model on Groq free tier
   judge_llm: openai/gpt-oss-20b     # RAGAS judge LLM on Groq free tier
-  embeddings: sentence-transformers/all-MiniLM-L6-v2
-  embedding_backend: huggingface    # HF Inference API (needs HF_TOKEN secret)
+  embeddings: BAAI/bge-small-en-v1.5
+  embedding_backend: fastembed    # runs locally on CPU inside the app - free, no token needed
 
 retrieval:
   top_k: 3

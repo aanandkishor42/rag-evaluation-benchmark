@@ -56,6 +56,10 @@ def _langchain_embeddings(model: str, provider: str, base_url: str | None, embed
         from rag.embeddings import _huggingface_embeddings
 
         return _huggingface_embeddings(model)
+    if embedding_backend == "fastembed":
+        from rag.embeddings import _fastembed_embeddings
+
+        return _fastembed_embeddings(model)
     if provider == "ollama":
         return OllamaOpenAIEmbeddings(
             model=model,
