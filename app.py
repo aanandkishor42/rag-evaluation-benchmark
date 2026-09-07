@@ -105,27 +105,32 @@ def _run_benchmark_sync(
                         "reference_contexts": result.reference_contexts,
                     }
                 ]
-                _, per = run_ragas_evaluation(
-                    sample, metrics, exp.judge_llm, exp.embedding_model,
-                    exp.provider, exp.base_url, exp.embedding_backend,
-                )
-                row: dict[str, object] = {
+                base_row: dict[str, object] = {
                     "experiment": exp.name,
                     "question": q["user_input"],
                     "answer": result.answer,
                 }
-                if per:
-                    for k, v in per[0].items():
-                        if k in ("user_input", "response"):
-                            continue
-                        if isinstance(v, float) and pd.isna(v):
-                            continue
-                        row[k] = round(v, 4) if isinstance(v, float) else v
+                for attempt in range(1, 4):
+                    if attempt > 1:
+                        status.update(label=f"🔄 Retrying scoring ({attempt}/3): {q_label}…")
+                    _, per = run_ragas_evaluation(
+                        sample, metrics, exp.judge_llm, exp.embedding_model,
+                        exp.provider, exp.base_url, exp.embedding_backend,
+                    )
+                    metrics_row: dict[str, object] = {}
+                    if per:
+                        for k, v in per[0].items():
+                            if k in ("user_input", "response") or (isinstance(v, float) and pd.isna(v)):
+                                continue
+                            metrics_row[k] = round(v, 4) if isinstance(v, float) else v
+                    row = {**base_row, **metrics_row}
+                    if any(k in row for k in metric_cols):
+                        break
                 scored = any(k in row for k in metric_cols)
                 if not scored:
                     row["status"] = (
                         "no answer (refusal/error)" if not (result.answer or "").strip()
-                        else "judge didn't score (quota / connection?)"
+                        else "couldn't score — judge returned no values (transient parse/connection error). Try rerun."
                     )
                 else:
                     row["status"] = "ok"
