@@ -3,14 +3,21 @@
 A config-driven harness that systematically measures retrieval precision, answer
 faithfulness, and hallucination rate across chunk size, chunk overlap, top-k and
 embedding configurations using [RAGAS](https://docs.ragas.io) on a LangChain +
-ChromaDB RAG stack. Works **100% free and locally with [Ollama](https://ollama.com)**
-(out of the box) or with the paid OpenAI API (set `provider: openai`).
+ChromaDB RAG stack. Works **100% free**: locally with [Ollama](https://ollama.com),
+and on the public web with [Streamlit Cloud](https://streamlit.io/cloud) +
+[Groq](https://groq.com) (free judge LLM) + [FastEmbed](https://github.com/qdrant/fastembed)
+(free local embeddings).
+
+⭐ **Headline feature:** a one-page web app where **any visitor uploads their own
+document and their own questions and gets live RAGAS accuracy scores per question** —
+no code, no setup, no API key.
 
 ## What it does
 
-1. Loads a knowledge base from `data/sample_docs/` (replace with your own `.txt`/`.md`/`.pdf`).
+1. Loads a knowledge base from `data/sample_docs/` (or uploaded by a visitor).
 2. For each experiment in `config.yaml`, builds a fresh ChromaDB index with the configured
-   chunk size / overlap / embedding model and answers every question in `data/test_set.json`.
+   chunk size / overlap / embedding model and answers every question in `data/test_set.json`
+   (or questions the visitor typed / uploaded).
 3. Scores each run with RAGAS LLM-as-judge metrics:
    - `context_precision` - are the retrieved chunks actually relevant? (LLM-graded)
    - `context_recall` - did retrieval surface the ground-truth information?
@@ -64,31 +71,45 @@ OpenAI account.
 > `llama3.2:3b`) must match what `ollama list` shows - Ollama's OpenAI-compatible
 > endpoint is strict about the tag.
 
-## Web app (upload docs + chat)
+## Web app (one page, 3 tabs)
 
-A beginner-friendly web UI ships in this repo - upload your own documents, click
-"Build index", then chat with them (local free RAG via Ollama):
+A beginner-friendly web UI ships in this repo — **no API key needed**:
+
+- **💬 Chat** — upload your own documents and chat with them (RAG over your files).
+- **▶ Run benchmark** — upload **your** document + **your** questions (typed or CSV),
+  pick an experiment, and watch **live per-question RAGAS scores** stream in row by row.
+- **📊 Benchmark scores** — aggregated scoreboard with bar charts.
 
 ```bash
 .venv\Scripts\python -m streamlit run app.py
 ```
 
-Then open http://localhost:8501. To share it with the public, you have two free options:
+Then open http://localhost:8501.
 
-- **Free forever, no server (Streamlit Cloud + Groq)** - follow the quick steps in
-  `DEPLOY.md`. Costs $0 (Groq free tier = 30 req/min, HuggingFace free embeddings).
-- **Own small server (Ollama, unlimited local model)** - follow the VPS path in `DEPLOY.md`.
+### Deploy it FREE to the public (Streamlit Cloud)
+
+The repo is ready for [Streamlit Community Cloud](https://share.streamlit.io): push to
+GitHub, create the app with `main module = app.py`, and set two **Secrets**
+(then the app uses `config.cloud.yaml` — Groq judge + FastEmbed embeddings):
+
+```toml
+# Streamlit → Settings → Secrets
+GROQ_API_KEY = "your Groq key"     # free: console.groq.com
+RAG_CONFIG = "config.cloud.yaml"
+```
+
+Full walkthrough (with the Ollama VPS option) is in `DEPLOY.md`. Groq free tier is
+~1,000 requests/day per API key (30 req/min) — plenty for interviews and demos.
 
 ## Scores dashboard (browser)
 
-A Streamlit page that reads `results/benchmark.db` and shows your RAGAS scores as
-tables + bar charts:
+The scores tab inside `app.py` renders the scoreboard from `results/benchmark.db`
+(with a sample-results fallback so the public cloud app always shows scores).
+A standalone page also exists:
 
 ```bash
 .venv\Scripts\python -m streamlit run dashboard.py
 ```
-
-Then open http://localhost:8501 (or `--server.port 8502` to run it next to the chat app).
 
 ## Usage
 
@@ -133,13 +154,17 @@ Useful flags:
 ## Project layout
 
 ```
-config.yaml            benchmark settings + experiment grid
+config.yaml            benchmark settings + experiment grid (local Ollama)
+config.cloud.yaml      cloud variant (Groq judge + FastEmbed embeddings)
+app.py                 Streamlit app: Chat / Run benchmark / Scores tabs
+scores_view.py         scoreboard renderer (session → local DB → sample results)
 run_benchmark.py       CLI entry point
 rag/                   corpus loading, chunking, embeddings, Chroma RAG pipeline
 evaluation/            test-set loading + RAGAS evaluation wrapper
 benchmark/             experiment runner, SQLite/CSV results store, report tables
 data/sample_docs/      sample knowledge base
 data/test_set.json     ground-truth test questions
+sample_results/        committed demo scores (keeps the public app populated)
 results/               benchmark.db, results.csv, per_question.csv (gitignored)
 ```
 
