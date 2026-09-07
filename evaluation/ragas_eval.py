@@ -91,10 +91,18 @@ def run_ragas_evaluation(
 
     has_reference = all(s.get("reference", "").strip() for s in samples)
     is_ollama = provider == "ollama"
+    if is_ollama:
+        max_workers, timeout, max_retries = 2, 600, 3
+    elif provider == "groq":
+        # Groq free tier = 30 requests/min. Run mostly sequential so we never
+        # trip the RPM limit (worker retries then soak up leftover 429s).
+        max_workers, timeout, max_retries = 2, 300, 5
+    else:
+        max_workers, timeout, max_retries = 8, 300, 3
     config = RunConfig(
-        max_workers=2 if is_ollama else 8,
-        max_retries=3,
-        timeout=600 if is_ollama else 300,
+        max_workers=max_workers,
+        max_retries=max_retries,
+        timeout=timeout,
     )
 
     llm = LangchainLLMWrapper(_chat_llm(judge_llm, provider, base_url), run_config=config)
